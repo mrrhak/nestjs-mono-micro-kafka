@@ -1,0 +1,95 @@
+version: "3"
+
+networks:
+  nestjs-mono-micro-kafka-network:
+    driver: bridge
+
+services:
+  zookeeper:
+    image: 'bitnami/zookeeper:latest'
+    ports:
+      - "2181:2181"
+    volumes:
+      - "zookeeper_data:/bitnami"
+    environment:
+      - ALLOW_ANONYMOUS_LOGIN=yes
+    networks:
+      - nestjs-mono-micro-kafka-network
+  kafka:
+    image: 'bitnami/kafka:latest'
+    ports:
+      - '9092:9092'
+      - '9093:9093'
+    volumes:
+      - "kafka_data:/bitnami"
+    environment:
+      - KAFKA_BROKER_ID=1
+      - KAFKA_CFG_ZOOKEEPER_CONNECT=zookeeper:2181
+      - ALLOW_PLAINTEXT_LISTENER=yes
+      - KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP=CLIENT:PLAINTEXT,EXTERNAL:PLAINTEXT
+      - KAFKA_CFG_LISTENERS=CLIENT://:9092,EXTERNAL://:9093
+      - KAFKA_CFG_ADVERTISED_LISTENERS=CLIENT://kafka:9092,EXTERNAL://localhost:9093
+      - KAFKA_CFG_INTER_BROKER_LISTENER_NAME=CLIENT
+    depends_on:
+      - zookeeper
+    networks:
+      - nestjs-mono-micro-kafka-network
+  auth:
+    build:
+      context: .
+      dockerfile: ./apps/auth/Dockerfile
+      target: development
+    command: yarn start:dev auth
+    env_file:
+      - ./apps/auth/.env
+    depends_on:
+      - kafka
+    volumes:
+      - .:/usr/src/app
+      - /usr/src/app/node_modules
+    # ports:
+    #   - 3002:3002
+    networks:
+      - nestjs-mono-micro-kafka-network
+  billing:
+    build:
+      context: .
+      dockerfile: ./apps/billing/Dockerfile
+      target: development
+    command: yarn start:dev billing
+    env_file:
+      - ./apps/billing/.env
+    depends_on:
+      - kafka
+      - auth
+    volumes:
+      - .:/usr/src/app
+      - /usr/src/app/node_modules
+    # ports:
+    #   - 3002:3002
+    networks:
+      - nestjs-mono-micro-kafka-network
+  order:
+    build:
+      context: .
+      dockerfile: ./apps/order/Dockerfile
+      target: development
+    command: yarn start:dev order
+    env_file:
+      - ./apps/order/.env
+    depends_on:
+      - kafka
+      - billing
+    volumes:
+      - .:/usr/src/app
+      - /usr/src/app/node_modules
+    ports:
+      - 3002:3002
+    networks:
+      - nestjs-mono-micro-kafka-network
+
+volumes:
+  zookeeper_data:
+    driver: local
+  kafka_data:
+    driver: local
